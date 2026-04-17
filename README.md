@@ -22,6 +22,36 @@ We approached the problem in three phases:
 
 The final model produces a shape function for every feature, so a sales rep can see exactly why a given lead scored high or low. That transparency is what lets the model support routing decisions — e.g., QA Directors (cluster with the lowest MX score) should be rerouted to the QX product rather than discarded.
 
+## Selected Visualizations
+
+### Feature Importance: What Actually Drives Conversion
+
+![EBM term importance](images/term_importance.png)
+
+The EBM ranks every feature by its mean absolute contribution to the predicted log-odds of success. `priority` (engagement type) is the dominant signal by a wide margin — roughly **2× the influence of the next feature**. The data-completeness flags I engineered (`mfg_lowinfo`, `title_lowinfo`) rank second and third, and the cluster-label features I created (`account_cluster`, `title_cluster`) round out the top five. Notably, industry, territory, and account tier do not appear in the top 15 — contradicting the intuition that firmographic segmentation is the right place to start.
+
+### Priority Shape Function: How Engagement Moves the Score
+
+![Priority shape function](images/priority_shape_function.png)
+
+This is the detailed view of the single strongest feature. Above zero pushes toward conversion; below zero pulls away. Two things matter:
+
+1. **P1 - Webinar Demo and Priority 2 are the only categories clearly below zero** (~-0.10). Webinar attendees convert worse than average once their other attributes are controlled for — they're a broader, less-ready audience.
+2. **Contact Us, Video Demo, and Live Demo sit around +0.35 to +0.55.** Two leads that both look "Priority 1" in the CRM can produce wildly different predictions depending on which high-intent action they took. No firmographic filter catches that gap.
+
+Rightmost categories (Other, Discount Offer, Low Info) have wide confidence intervals from small sample sizes — the model is appropriately uncertain there.
+
+### Title Cluster Shape Function: The Cross-Sell Insight
+
+![Title cluster shape function](images/title_cluster_shape_function.png)
+
+The `title_cluster` feature compresses 361 sparse title-word columns into 12 interpretable groups. The shape function reveals a striking business story:
+
+- **Cluster 7** (founders, production managers, plant managers, engineering managers) sits at **+0.15** with tight confidence intervals. These are roles that feel manufacturing-quality pain directly — exactly who the MX product is built for.
+- **Cluster 1** (QA Directors, Quality Specialists, Associate Directors of Quality) is at **-0.19** — the lowest-scoring group. They sound like a natural MX audience but consistently don't convert.
+
+The recommendation isn't to discard Cluster 1 leads. They're a **natural fit for QX** (quality management software) — this model surfaces a cross-sell opportunity that the team's initial firmographic analysis missed.
+
 ## My Contribution
 
 My individual work focused on the EBM model and the cluster analysis feeding into it.
