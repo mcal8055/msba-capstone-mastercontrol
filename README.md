@@ -24,6 +24,8 @@ The final model produces a shape function for every feature, so a sales rep can 
 
 ## Selected Visualizations
 
+> **Explore the model interactively:** Open [`dashboard.html`](./dashboard.html) in a browser to see feature importance, shape functions, and the threshold-vs-cost trade-off with live controls. The dashboard is a single self-contained HTML file with no dependencies.
+
 ### Feature Importance: What Actually Drives Conversion
 
 ![EBM term importance](images/term_importance.png)
@@ -62,6 +64,7 @@ My individual work focused on the EBM model and the cluster analysis feeding int
 - **Authored the standalone cluster analysis writeup** ([`cluster_analysis_writeup.Rmd`](./cluster_analysis_writeup.Rmd)) — a self-contained report documenting all four cluster analyses with embedded plots.
 - **Added metric consistency.** The group's tidymodels models report `roc_auc` via `yardstick`, while the EBM's calibration output reports the mathematically identical C-statistic via `rms::val.prob()`. I added an explicit `yardstick::roc_auc()` call so the reported metric is directly comparable across notebooks.
 - **Built the EBM slide section for the final presentation** — the glass-box explanation, the priority shape function as the single most important feature, and the "Cluster 7 prioritize / Cluster 1 reroute" recommendation.
+- **Built an interactive dashboard** ([`dashboard.html`](./dashboard.html)) that makes the model's outputs explorable without requiring R. It lets a viewer drill into feature importance, cycle through shape functions, and drag sliders to see how the threshold and outreach cost change expected net value per 1,000 leads.
 
 ## Business Value
 
@@ -95,8 +98,10 @@ The EBM delivers measurable value along two dimensions:
 
 | File | Description |
 |------|-------------|
+| [`dashboard.html`](./dashboard.html) | Interactive dashboard — feature importance, shape function explorer, threshold/cost trade-off, model comparison. Self-contained; open in a browser. |
 | [`ebm_model.Rmd`](./ebm_model.Rmd) | Standalone EBM modeling notebook — data prep, fit, predictions, calibration, global and local explanations |
 | [`cluster_analysis_writeup.Rmd`](./cluster_analysis_writeup.Rmd) / `.html` | Standalone writeup of all four cluster analyses (account profile, title roles, MX-specific, ICP discovery) with embedded plots |
+| [`images/`](./images/) | Static plot exports embedded in this README |
 
 **Not in this repo:** raw project data, the shared EDA notebook, other team members' modeling work, and the final presentation slides. For those, see the group repository: [gabyr93/Group-Project-Master-Control](https://github.com/gabyr93/Group-Project-Master-Control).
 
