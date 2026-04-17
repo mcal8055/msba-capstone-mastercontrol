@@ -1,0 +1,16 @@
+# Project data — never commit
+*.csv
+*.rds
+*.pkl
+data/
+
+# R artifacts
+.Rhistory
+.RData
+.Rproj.user/
+*.Rproj
+*_cache/
+*_files/
+
+# OS
+.DS_Store

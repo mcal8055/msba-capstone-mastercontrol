@@ -1,0 +1,142 @@
+---
+title: "Clustering EDA: Analysis & Interpretation"
+output:
+  html_document:
+    self_contained: true
+---
+
+<!--
+  To incorporate into the main EDA document:
+  Copy everything below this YAML header and paste it after the
+  clustering code sections in "EDA Master Control.Rmd".
+  Remove the ![](image) tags since the main Rmd generates plots inline.
+
+  Updated: March 2026 — re-run on "Mastercontrol QAL Performance.csv"
+  (16,644 rows; improved data completeness vs. prior dataset).
+-->
+
+## Clustering Analysis: Interpretation & Findings
+
+The four clustering analyses below segment MasterControl's lead pipeline from different angles — account profiles, job title roles, Mx-specific lead profiles, and successful-lead ICPs — to identify which combinations of features drive Mx conversion.
+
+---
+
+### Analysis 1: Account Profile Clustering (Gower + PAM, k=2)
+
+![Optimal k by Silhouette Width](../EDA-Master-Control_files/figure-html/acct-gower-silhouette-1.png)
+
+**Silhouette:** k=2 is optimal with avg silhouette ~0.27. While lower than the prior dataset (~0.43), the two-cluster structure remains the best partition. The drop in silhouette reflects the improved data completeness — fewer "Low Info" records means more nuanced account profiles that don't separate as cleanly into two bins.
+
+![Account Cluster Silhouette Plot](../EDA-Master-Control_files/figure-html/acct-pam-fit-1.png)
+
+**Two account archetypes identified:**
+
+- **Cluster 1 ("Core Pharma"):** Americas-dominant (~90%), Pharma & BioTech (~55%), In-House manufacturing (~58%), Other Mfg (~36%), Medium tier (~61%).
+- **Cluster 2 ("Diverse / Low-Info"):** More geographically diverse (EMEA ~27%, APAC ~16%), Medium tier (~54%), higher Non-Mfg/Low Info site function (~60%), more Low Info manufacturing model (~38%).
+
+![Account Cluster Composition Heatmap](../EDA-Master-Control_files/figure-html/acct-composition-heatmap-1.png)
+
+**Key conversion finding:** Cluster 1 (Core Pharma) has Mx conversion of **14.2%** (n=2,954) vs Cluster 2 at **9.8%** (n=1,127). Cluster 1 also has Qx at ~23% (n=7,094) vs Cluster 2 at ~16% (n=5,075). The Core Pharma archetype converts at ~1.4x the rate for Mx — still a meaningful targeting signal, though the gap narrowed compared to the prior dataset (which showed 2.5x).
+
+![Lead Conversion Rate by Account Cluster](../EDA-Master-Control_files/figure-html/acct-conversion-1.png)
+
+**MCA biplot:** The two clusters separate along Dim 1 (7.1% variance) and Dim 2 (5.9%), with Cluster 2 spreading into higher Dim values — driven by rare/diverse categories.
+
+![Account Clusters in MCA Space](../EDA-Master-Control_files/figure-html/acct-mca-biplot-1.png)
+
+---
+
+### Analysis 2: Title Role Clustering (Jaccard + Hierarchical, k=12)
+
+![Title Role Silhouette Analysis](../EDA-Master-Control_files/figure-html/title-silhouette-1.png)
+
+**Silhouette:** Very low scores (0.03–0.071 range), peaking at k=12. This indicates weak cluster structure in title words — titles are highly heterogeneous and don't form tight groups. The dendrogram shows gradual merging rather than sharp cuts.
+
+![Title Role Family Dendrogram](../EDA-Master-Control_files/figure-html/title-dendrogram-1.png)
+
+**Heatmap insights (most interpretable clusters):**
+
+| Cluster | Dominant Title Keywords | Interpretation |
+|---------|------------------------|----------------|
+| 7 | quality, manager, success | Quality/Success Managers |
+| 10 | manufacturing, engineering | Manufacturing Engineers |
+| 12 | regulatory, affairs | Regulatory Affairs |
+| 5 | quality, assurance, specialist | QA Specialists |
+| 9 | director, operations | Operations Directors |
+| 3 | president, executive | Executives (zero conversion) |
+
+![Role Family Heatmap: Top 30 Discriminating Title Words](../EDA-Master-Control_files/figure-html/title-heatmap-1.png)
+
+**Key conversion finding:** Cluster 7 is the standout — Mx conversion at **27.6%** (n=395), more than double the 12.7% Mx average. It also shows an extraordinary Qx conversion of **89.1%** (n=900), suggesting these leads (likely quality/success manager roles) are overwhelmingly receptive to both products. Clusters 10 and 12 also convert above average for Mx at ~16.9% and ~16.8% respectively. Cluster 3 (executive/president titles) shows **0%** conversion for both Mx and Qx (n=265 Mx, n=631 Qx) — a clear "dead zone" for targeting. Cluster 8 also underperforms at 3.3% Mx conversion (n=544).
+
+![Lead Conversion by Title Role Family](../EDA-Master-Control_files/figure-html/title-conversion-1.png)
+
+**t-SNE:** Shows some spatial separation of clusters but significant overlap, consistent with the low silhouette scores. The clusters are more of a soft partitioning than hard boundaries.
+
+![Title Role Families in t-SNE Space](../EDA-Master-Control_files/figure-html/title-tsne-1.png)
+
+---
+
+### Analysis 3: Mx-Specific Lead Profile Clustering (MCA + k-means, k=5)
+
+![MCA Screeplot: Mx Leads](../EDA-Master-Control_files/figure-html/mx-mca-1.png)
+
+**MCA screeplot:** Very flat — Dim 1 explains only 7.3%, and it takes all 15 dimensions to reach ~50% cumulative inertia. This reflects the high dimensionality and categorical nature of the data.
+
+![MCA Variable Biplot](../EDA-Master-Control_files/figure-html/mx-mca-biplot-1.png)
+
+![Optimal k for Mx Clustering](../EDA-Master-Control_files/figure-html/mx-kmeans-optimal-1.png)
+
+![Mx Lead Clusters in MCA Space](../EDA-Master-Control_files/figure-html/mx-cluster-plot-1.png)
+
+**Conversion by Mx cluster — the most actionable finding:**
+
+| Cluster | Conversion Rate | n (% of Mx) | Label |
+|---------|----------------|-------------|-------|
+| 5 | **19.34%** | 941 (23.1%) | "Golden Profile" |
+| 2 | **13.04%** | 46 (1.1%) | Small, above-average |
+| 3 | 11.82% | 1,557 (38.2%) | Largest, near average |
+| 1 | 11.79% | 831 (20.4%) | Near average |
+| 4 | **8.36%** | 706 (17.3%) | Below-average profile |
+
+![Mx Lead Conversion Rate by Cluster](../EDA-Master-Control_files/figure-html/mx-conversion-1.png)
+
+**Business implication:** With the updated data, the optimal cluster count shifted from 6 to 5 and the conversion spread narrowed. The worst-performing cluster (Cluster 4) now converts at 8.36% (vs 1.95% in the prior data) — still below the 12.7% average but no longer dramatically wasteful. Cluster 5 ("Golden Profile") remains the top segment at 19.34% (n=941, 23.1% of Mx leads), confirming that roughly a quarter of the pipeline contains leads that convert at 1.5x the average. Clusters 5+2 together (24.2% of Mx leads) convert well above average and should be prioritized.
+
+---
+
+### Analysis 4: ICP Discovery (Gower + PAM on successful Mx leads, k=2)
+
+![ICP Optimal k by Silhouette Width](../EDA-Master-Control_files/figure-html/icp-gower-sil-1.png)
+
+**Silhouette:** Very low (~0.095 at k=2). The successful leads don't form distinct internal clusters — they're relatively homogeneous, which actually makes sense: successful leads share a common profile.
+
+![ICP Cluster Silhouette Plot](../EDA-Master-Control_files/figure-html/icp-pam-fit-1.png)
+
+**ICP vs Population comparison — over/under-representation in successful Mx leads:**
+
+| Feature | All Mx Leads | Successful Mx Leads | Signal |
+|---------|-------------|-------------------|--------|
+| Americas territory | ~53% | ~61% | Over-represented |
+| APAC & Oceania | ~21% | ~14% | Under-represented |
+| Medical Device industry | ~22% | ~28% | Over-represented |
+| Small tier | ~22% | ~29% | Over-represented |
+| Large tier | ~15% | ~8% | Under-represented |
+| Other Mfg (site function) | ~29% | ~36% | **Over-represented** |
+| Med Device Mfg | ~10% | ~14% | Over-represented |
+| Non-Mfg / Low Info | ~37% | ~27% | **Under-represented** |
+
+![Successful Mx Leads vs All Mx Leads: Feature Distribution](../EDA-Master-Control_files/figure-html/icp-vs-population-1.png)
+
+**ICP summary:** The ideal Mx customer is an Americas-based, small-to-medium, Pharma/BioTech or Medical Device company with an actual manufacturing function (not Non-Mfg/Low Info). With the improved dataset, Non-Mfg/Low Info dropped from ~47% to ~37% of all Mx leads (many previously missing values are now properly categorized), but it remains clearly under-represented among successes (~27%). The manufacturing-function signal is now even clearer: Other Mfg (~29% → ~36%) and Med Device Mfg (~10% → ~14%) are both over-represented among successful conversions.
+
+---
+
+## Overall Recommendations
+
+1. **Deprioritize Non-Mfg/Low Info leads for Mx** — still ~37% of the pipeline but clearly under-converting (~27% of successes)
+2. **Focus Mx targeting on the Core Pharma account archetype** (Americas, Pharma/BioTech, In-House) which converts at 14.2% vs 9.8%
+3. **Cluster 7 title roles (quality/success managers) are the strongest conversion signal** — 27.6% Mx conversion, more than 2x the average
+4. **Avoid executive/president title roles (Cluster 3)** — 0% conversion across both Mx and Qx despite significant lead volume
+5. **Mx Cluster 5 ("Golden Profile") represents the top targeting segment** — 23.1% of leads converting at 19.34%
+6. **The ICP is confirmed:** Americas + manufacturing-focused + small/medium tier + Pharma or Med Device

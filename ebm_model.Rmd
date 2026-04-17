@@ -1,0 +1,243 @@
+---
+title: "Explainable Boosting Machine for MX Lead Conversion"
+author: "Josh McAlister"
+date: "2026-04-17"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    toc-title: "Contents"
+    embed-resources: true
+execute:
+  include: true
+  eval: true
+  warning: false
+  message: false
+editor:
+  markdown:
+    wrap: sentence
+---
+
+# About This Notebook
+
+This notebook contains my individual contribution to the MasterControl MX Lead Progression group capstone project: an Explainable Boosting Machine (EBM) model that predicts whether a qualified Mx lead will progress to SQL, SQO, or Won.
+The full group project, including the shared baseline GLM and decision tree pipeline that this model was designed to fit alongside, lives at <https://github.com/gabyr93/Group-Project-Master-Control>.
+
+The EBM was designed to be fully self-contained.
+It reads the modeling-ready dataset produced in the group's EDA phase, joins the cluster-label features I engineered from the clustering analyses, and creates its own train/test split using the same `set.seed(123)` + `caret::createDataPartition()` call as the shared pipeline — guaranteeing identical row assignments so AUC comparisons across the three models are fair.
+
+> **Note on reproducibility:** The project's source data (`Mastercontrol QAL Performance.csv`) is not committed to GitHub per data-privacy requirements.
+> The `.rds` files referenced below are produced by the EDA notebook in the group repo.
+> To re-render this notebook locally, place `leads_cleaned_final.rds`, `cluster_labels.rds`, and `mx_cluster_labels.rds` in a `data/` subfolder.
+
+# Explainable Boosting Machine (EBM)
+
+In this section, we fit an Explainable Boosting Machine (EBM) as the third modeling approach in the project.
+EBMs are a type of Generalized Additive Model with pairwise interactions (GA²M) that use cyclic gradient boosting to learn shape functions for each feature.
+Unlike black-box models, EBMs are fully interpretable — each feature's contribution can be visualized independently — while still achieving accuracy competitive with ensemble methods like random forests and gradient boosting.
+
+EBMs are especially useful for this project because they can show exactly *how* each lead characteristic (industry, territory, title role, enrichment quality) relates to conversion probability, which directly supports the business goal of understanding what makes a strong Mx lead.
+
+This section uses the `ebm` R package, which wraps the Python `interpret` library via `reticulate`.
+
+```{r setup-libs, include=FALSE}
+library(tidyverse)
+library(caret)
+```
+
+```{r EBM Setup, include=FALSE}
+# Wire up the reticulate/Python backend the ebm package depends on.
+# The virtualenv only needs to be created once per machine — the install
+# call is a no-op if the packages are already present.
+library(reticulate)
+use_virtualenv("r-ebm", required = TRUE)
+virtualenv_create("r-ebm")
+virtualenv_install("r-ebm", packages = c("interpret", "numpy", "scikit-learn"))
+library(ebm)
+library(patchwork)
+```
+
+```{r EBM Data Prep}
+# Load cluster labels exported from the EDA phase
+cluster_labels    <- readRDS("data/cluster_labels.rds")
+mx_cluster_labels <- readRDS("data/mx_cluster_labels.rds")
+
+# Build the EBM dataset independently — join cluster features, filter to Mx
+ebm_data <- readRDS("data/leads_cleaned_final.rds") %>%
+  left_join(cluster_labels, by = "qal_id") %>%
+  left_join(mx_cluster_labels, by = "qal_id") %>%
+  filter(solution_rollup == "Mx") %>%
+  mutate(
+    next_stage_target = factor(
+      next_stage_target,
+      levels = c("0", "1"),
+      labels = c("Not Successful", "Successful")
+    )
+  ) %>%
+  # Replace NAs in title_cluster with an explicit factor level.
+  # Rows flagged as title_lowinfo were never clustered, so they carry NA.
+  # EBM handles NAs internally but cannot display them in shape-function plots.
+  mutate(
+    title_cluster = fct_na_value_to_level(title_cluster, level = "No_Title_Info")
+  ) %>%
+  select(-qal_id, -contact_lead_id, -next_stage_c,
+         -contact_lead_title, -solution_rollup)
+
+# Drop a leftover duplicate column if the source data contained one
+if ("solution.1" %in% names(ebm_data)) {
+  ebm_data <- ebm_data %>% select(-solution.1)
+}
+
+# Same seed + stratified split as the shared pipeline -> identical row partition
+set.seed(123)
+ebm_split_idx <- caret::createDataPartition(
+  y = ebm_data$next_stage_target, p = 0.70, list = FALSE
+)
+ebm_train <- ebm_data[ebm_split_idx, ]
+ebm_test  <- ebm_data[-ebm_split_idx, ]
+
+dim(ebm_train)
+dim(ebm_test)
+```
+
+### Interpretation of EBM Data Prep
+
+The EBM dataset is built independently from the shared pipeline to avoid introducing cluster-label NAs into the group's existing GLM and decision tree recipes.
+Three engineered features from the EDA clustering phase — `account_cluster`, `title_cluster`, and `mx_cluster` — are joined onto the base modeling data.
+For `title_cluster`, rows where the lead title was flagged as low-info (and therefore never clustered) have their NA replaced with an explicit `"No_Title_Info"` factor level so that EBM can visualize the shape function for that group.
+
+The train/test split uses the same `set.seed(123)` and `caret::createDataPartition()` call as the shared pipeline, which guarantees identical row selection since the function depends only on the target vector and the seed.
+This means the EBM is evaluated on exactly the same holdout set as the GLM and decision tree, making AUC comparisons fair.
+
+```{r EBM Fit}
+# Fit the EBM. The formula interface is handled by the ebm package; the
+# model auto-detects pairwise interactions and fits shape functions for
+# each main effect.
+mx_ebm <- ebm(next_stage_target ~ ., data = ebm_train, objective = "log_loss")
+print(mx_ebm)
+```
+
+### Interpretation of EBM Fit
+
+The `ebm()` call fits a GA²M model using cyclic gradient boosting.
+Each feature gets its own shape function (main effect), and the model also automatically detects and fits the most important pairwise interaction terms.
+The `log_loss` objective is appropriate for binary classification — it optimizes the model to produce well-calibrated predicted probabilities rather than just class labels.
+
+The printed summary shows the number of main effects and interaction terms retained, along with the intercept.
+Unlike the GLM (which required dummy encoding via `step_dummy`) or the decision tree (which splits on one variable at a time), the EBM learns flexible nonlinear relationships for each feature while remaining fully interpretable.
+
+```{r EBM Predictions}
+# Generate predictions on the held-out test set
+ebm_probs  <- predict(mx_ebm, newdata = ebm_test)
+ebm_labels <- predict(mx_ebm, newdata = ebm_test, type = "class")
+
+# Confusion matrix — show how the model classifies each test lead
+table("Observed" = ebm_test$next_stage_target, "Predicted" = ebm_labels)
+
+# ROC AUC via yardstick so it matches the metric reported by the
+# GLM and decision tree in the shared pipeline (val.prob below
+# reports the same number as C-statistic — they are mathematically
+# identical for binary classification).
+ebm_roc <- tibble(
+  truth    = ebm_test$next_stage_target,
+  estimate = ebm_probs[, 2L]
+)
+yardstick::roc_auc(ebm_roc, truth, estimate, event_level = "second")
+```
+
+### Interpretation of EBM Predictions
+
+The confusion matrix shows how the EBM classifies test-set leads compared to their actual outcomes.
+The key metrics to watch are:
+
+-   **True Positives (Successful predicted as Successful):** how many real successes the model catches
+-   **False Negatives (Successful predicted as Not Successful):** how many real successes the model misses
+-   **False Positives (Not Successful predicted as Successful):** leads the model incorrectly flags as promising
+
+Because the target is imbalanced (\~12.9% success rate), raw accuracy can be misleading — a model that predicts "Not Successful" for every lead would still be \~87% accurate.
+The calibration plot in the next section provides a better view of whether the predicted probabilities are reliable.
+
+```{r EBM Calibration}
+library(rms)
+# Calibration plot: predicted probability vs. observed frequency.
+# This reports the C-statistic (ROC AUC) and Brier score, plus a visual
+# check that predicted probabilities align with actual outcome rates.
+par(las = 1)
+rms::val.prob(
+  ebm_probs[, 2L],
+  as.integer(ebm_test$next_stage_target == "Successful"),
+  cex = 0.5
+)
+```
+
+### Interpretation of EBM Calibration
+
+The calibration plot compares the model's predicted probabilities against the actual observed success rates.
+A well-calibrated model should have points falling close to the 45-degree diagonal line — meaning that when the model says a lead has a 20% chance of success, roughly 20% of those leads actually succeed.
+
+Key statistics reported on the plot include the **C-statistic (0.869)**, which is equivalent to ROC AUC and directly comparable to the group's GLM (0.79) and decision tree (0.82).
+The **Brier score (0.073)** is low, indicating well-calibrated predicted probabilities.
+The **calibration slope (0.98)** is near 1.0, confirming that predicted probabilities correspond tightly to observed frequencies.
+
+```{r EBM Global Explanation}
+# Top 15 most important terms by mean absolute score (main effects + interactions)
+plot(mx_ebm, n_terms = 15)
+
+# Shape function for a single feature — shows how each category of
+# acct_territory_rollup shifts the prediction up or down
+plot(mx_ebm, term = "acct_territory_rollup", horizontal = TRUE)
+
+# List the pairwise interactions the model detected
+# (capped at 20 rows so the document compiles cleanly)
+head(mx_ebm$term_names_[grepl("&", mx_ebm$term_names_)], n = 20)
+```
+
+### Interpretation of EBM Global Explanation
+
+The term importance plot ranks each feature (and interaction term) by its mean absolute contribution to the predicted log-odds of success.
+Features at the top of the chart have the largest overall influence on whether a lead is predicted as successful or not.
+In this model, `priority` (engagement type) is the single strongest predictor by a wide margin, followed by the data-completeness flags `mfg_lowinfo` and `title_lowinfo`, then the engineered `account_cluster` and `title_cluster` features.
+
+The shape function plot for `acct_territory_rollup` shows exactly how each territory category shifts the prediction — Americas is the only territory with a positive score, while every other region pulls the prediction downward.
+Unlike a logistic regression coefficient (which gives a single number), the EBM shape function can show nonlinear and non-monotonic relationships across categorical levels.
+
+The listed pairwise interactions reveal which feature combinations the model found to be jointly predictive beyond their individual effects.
+These interactions can surface insights that single-variable analyses miss — for instance, a specific industry × territory combination that converts unusually well.
+
+```{r EBM Local Explanation}
+# Local explanation for a single test-set lead. The waterfall plot
+# decomposes the prediction into each feature's contribution, starting
+# from the intercept and adding/subtracting shape-function values.
+newx <- subset(ebm_test[1L, ], select = -next_stage_target)
+newy <- ebm_test$next_stage_target[1L]
+plot(mx_ebm, local = TRUE, X = newx, y = newy)
+```
+
+### Interpretation of EBM Local Explanation
+
+The local explanation waterfall plot decomposes the prediction for a single lead into the contributions from each feature.
+Starting from the intercept (the baseline log-odds of success), each bar shows how much a specific feature pushes the prediction up (toward Successful) or down (toward Not Successful).
+
+This is especially useful for the business team because it can answer questions like: *"Why did the model score this particular lead highly?"* or *"What would need to change about this lead for it to be predicted as successful?"* Each local explanation is fully faithful to the model — it is not an approximation — because EBMs are additive by design.
+That exact-arithmetic property is the core reason the EBM was selected over XGBoost: both achieved strong ranking performance, but only the EBM can tell a sales rep *why* a given lead received its score.
+
+```{r EBM Save}
+# Save the fitted model as a Python pickle. EBM objects are reticulate
+# wrappers around Python classes, so saveRDS does not work across the
+# R/Python bridge — py_save_object is the supported path.
+reticulate::py_save_object(mx_ebm, filename = "data/mx_ebm.pkl")
+```
+
+# Summary
+
+The EBM achieved a test-set ROC AUC of **0.87**, outperforming the group's XGBoost (0.82), decision tree (0.76), and logistic regression (0.79) models while remaining fully interpretable.
+The calibration slope of 0.98 and Brier score of 0.073 confirm the predicted probabilities are trustworthy for business thresholding decisions.
+
+The three most important signals in the model are:
+
+1.  **Priority / engagement type** — how a lead engaged (Contact Us, Video Demo, Live Demo vs. Webinar Demo, Priority 2)
+2.  **Data completeness** — missing enrichment fields (`mfg_lowinfo`, `title_lowinfo`) are themselves strong negative signals
+3.  **Job title cluster** — role-based segments derived from unsupervised clustering of lead titles
+
+For the full business narrative, ideal customer profile, hypothetical scoring scenarios, and cost-benefit analysis, see the group's repository: <https://github.com/gabyr93/Group-Project-Master-Control>.
